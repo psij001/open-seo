@@ -8,6 +8,11 @@ import { AppError } from "@/server/lib/errors";
 import { gatewayCallFor } from "@/server/lib/gateway-attribution";
 import { DATAFORSEO_NOT_SET_UP_MESSAGE } from "@/shared/gateway-setup-messages";
 import {
+  createTregDataforseoFetch,
+  parseTregKey,
+  type TregCredentials,
+} from "@/server/lib/dataforseo/treg";
+import {
   getOptionalEnvValue,
   getRequiredEnvValue,
   getWorkersEnv,
@@ -75,7 +80,21 @@ export async function getDataforseoFetch(): Promise<typeof fetch> {
     return providerFetch;
   }
   const apiKey = await getRequiredEnvValue("DATAFORSEO_API_KEY");
+  // `treg:<token>`: treg holds the DataForSEO credential (dataforseo/treg.ts).
+  const treg = parseTregKey(apiKey);
+  if (treg) return getTregDataforseoFetch(treg);
   return withAuthorization(`Basic ${apiKey}`);
+}
+
+// One per isolate, so its passthrough-vs-catalog answer is remembered.
+let tregFetch: { key: string; fetch: typeof fetch } | null = null;
+
+function getTregDataforseoFetch(credentials: TregCredentials): typeof fetch {
+  const key = `${credentials.org ?? ""}|${credentials.token}`;
+  if (tregFetch?.key !== key) {
+    tregFetch = { key, fetch: createTregDataforseoFetch(credentials) };
+  }
+  return tregFetch.fetch;
 }
 
 /** A fetch that reaches Context.dev authenticated, or null without a key. */
